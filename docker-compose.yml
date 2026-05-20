@@ -1,0 +1,120 @@
+# docker-compose.yml — Stack complète DIGITRANS-CM Supply Chain
+
+version: '3.8'
+
+services:
+
+  # ─── Base de données PostgreSQL ───────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: digitrans-postgres
+    environment:
+      POSTGRES_DB: supplychain_db
+      POSTGRES_USER: supplychain_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-supplychain_secret_2026}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - backend-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U supplychain_user -d supplychain_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── RabbitMQ Message Broker ──────────────────────────
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: digitrans-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Management UI
+    networks:
+      - backend-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ─── Inventory Microservice ───────────────────────────
+  inventory-service:
+    build:
+      context: ./inventory-service
+      dockerfile: Dockerfile
+    container_name: digitrans-inventory
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: supplychain_db
+      DB_USERNAME: supplychain_user
+      DB_PASSWORD: ${DB_PASSWORD:-supplychain_secret_2026}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      FRONTEND_URL: http://localhost:3000
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - backend-network
+      - frontend-network
+    restart: unless-stopped
+
+  # ─── Notification Microservice ────────────────────────
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: digitrans-notification
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "8081:8081"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - backend-network
+    restart: unless-stopped
+
+  # ─── Frontend React ───────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: digitrans-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - inventory-service
+    networks:
+      - frontend-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+
+networks:
+  backend-network:
+    driver: bridge
+  frontend-network:
+    driver: bridge
