@@ -1,0 +1,42 @@
+---
+- name: Configuration du serveur de production AGROCAM S.A.
+  hosts: all
+  become: yes
+  tasks:
+
+    # 1. Mise à jour du système
+    - name: Mettre à jour les paquets apt
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    # 2. Installation des prérequis de Docker
+    - name: Installer les dépendances système
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+
+    # 3. Installation propre de Docker Engine
+    - name: Installer Docker
+      apt:
+        name: docker.io
+        state: present
+
+    - name: Assurer que Docker est démarré
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    # 4. Configuration des dossiers de l'application
+    - name: Créer le dossier de déploiement applicatif
+      file:
+        path: /opt/digitrans-cm-supply-chain
+        state: directory
+        mode: '0755'
+        owner: "{{ ans_user | default('ubuntu') }}"

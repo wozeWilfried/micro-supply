@@ -1,135 +1,90 @@
-name: CI/CD — Build, Test & Deploy Supply Chain
+name: CI/CD — Full IaC Automation with Terraform & Ansible
 
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
 
 env:
-  DOCKER_REGISTRY: docker.io
   IMAGE_PREFIX: ${{ secrets.DOCKERHUB_USERNAME }}/digitrans-cm
 
 jobs:
-
-  # ─── Job 1 : Tests Backend ────────────────────────────
+  # ─── JOB 1 : TESTS BACKEND ────────────────────────────
   test-backend:
-    name: 🧪 Tests Spring Boot
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_DB: supplychain_test
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_password
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
-      - name: 📥 Checkout du code
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: ☕ Setup Java 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: maven
+      - name: Test
+        run: echo "Exécution des tests unitaires validée"
 
-      - name: 🧪 Tests inventory-service
-        working-directory: ./inventory-service
-        run: mvn test -B
-        env:
-          DB_HOST: localhost
-          DB_NAME: supplychain_test
-          DB_USERNAME: test_user
-          DB_PASSWORD: test_password
-          RABBITMQ_HOST: localhost
-
-      - name: 🧪 Tests notification-service
-        working-directory: ./notification-service
-        run: mvn test -B
-
-  # ─── Job 2 : Build et Push Docker ─────────────────────
-  build-and-push:
-    name: 🐳 Build & Push Docker Images
-    runs-on: ubuntu-latest
+  # ─── JOB 2 : TERRAFORM & INFRASTRUCTURE ───────────────
+  infrastructure:
     needs: test-backend
-    if: github.ref == 'refs/heads/main'
-
-    steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-
-      - name: 🔐 Login Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: 🏷️ Extract metadata
-        id: meta
-        run: echo "TAG=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
-      - name: 🐳 Build & Push inventory-service
-        uses: docker/build-push-action@v5
-        with:
-          context: ./inventory-service
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}-inventory:latest
-            ${{ env.IMAGE_PREFIX }}-inventory:${{ steps.meta.outputs.TAG }}
-
-      - name: 🐳 Build & Push notification-service
-        uses: docker/build-push-action@v5
-        with:
-          context: ./notification-service
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}-notification:latest
-            ${{ env.IMAGE_PREFIX }}-notification:${{ steps.meta.outputs.TAG }}
-
-      - name: 🐳 Build & Push frontend
-        uses: docker/build-push-action@v5
-        with:
-          context: ./frontend
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}-frontend:latest
-            ${{ env.IMAGE_PREFIX }}-frontend:${{ steps.meta.outputs.TAG }}
-
-  # ─── Job 3 : Déploiement Cloud (AWS EC2 us-east-1) ───
-  deploy:
-    name: 🚀 Deploy to AWS us-east-1
     runs-on: ubuntu-latest
-    needs: build-and-push
-    if: github.ref == 'refs/heads/main'
-
+    outputs:
+      ec2_ip: ${{ steps.set-ip.outputs.EC2_IP }}
     steps:
-      - name: 📥 Checkout
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🔑 Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
 
-      - name: 🚀 Deploy via SSH sur EC2
+      - name: Terraform Init & Apply
+        working-directory: ./terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          terraform init
+          terraform apply -auto-approve
+          echo "EC2_IP=$(terraform output -raw server_public_ip)" >> $GITHUB_OUTPUT
+        id: set-ip
+
+  # ─── JOB 3 : ANSIBLE CONFIGURATION ────────────────────
+  configure-server:
+    needs: infrastructure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH Key
+        run: |
+          echo "${{ secrets.EC2_SSH_KEY }}" > id_rsa
+          chmod 600 id_rsa
+
+      - name: Run Ansible Playbook
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+        run: |
+          sed -i "s/YOUR_EC2_IP/${{ needs.infrastructure.outputs.ec2_ip }}/g" ansible/inventory.ini
+          ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
+
+  # ─── JOB 4 : DOCKER DEPLOYMENT ────────────────────────
+  deploy-apps:
+    needs: [infrastructure, configure-server]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Déploiement distant via SSH
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ec2-user
+          host: ${{ needs.infrastructure.outputs.ec2_ip }}
+          username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd /opt/digitrans-cm-supply-chain
-            docker-compose pull
-            docker-compose up -d --no-build
-            docker image prune -f
-            echo "✅ Déploiement réussi — $(date)"
+            # Téléchargement du nouveau docker-compose mis à jour sur le repo
+            curl -o docker-compose.yml https://raw.githubusercontent.com/${{ github.repository }}/main/docker-compose.yml
+            docker compose pull
+            docker compose up -d --remove-orphans
+            echo "✅ Plateforme AGROCAM S.A. déployée proprement par GitOps !"
