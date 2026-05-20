@@ -1,0 +1,66 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: inventory-service
+
+  # ── Base de données MySQL ──
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:supplychain_db}?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:supplychain_user}
+    password: ${DB_PASSWORD:changeme}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      connection-timeout: 30000
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  # ── RabbitMQ ──
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: /
+
+# ── Actuator ──
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+# ── Configuration métier ──
+app:
+  rabbitmq:
+    exchange: supply-chain.exchange
+    routing-key:
+      stock-alert: stock.alert.routing.key
+    queue:
+      stock-alert: stock.alert.queue
+
+---
+spring:
+  config:
+    activate:
+      on-profile: cloud
+  datasource:
+    url: jdbc:mysql://${AWS_RDS_ENDPOINT}:3306/${DB_NAME}?useSSL=true&serverTimezone=UTC
+  rabbitmq:
+    host: ${CLOUDAMQP_HOST}
+    port: 5671
+    ssl:
+      enabled: true
