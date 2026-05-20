@@ -29,23 +29,32 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       ec2_ip: ${{ steps.set-ip.outputs.EC2_IP }}
+    
+    # Injection des identifiants AWS au niveau de tout le Job
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: "us-east-1"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false # Désactive le wrapper pour éviter les conflits d'outputs
 
-      - name: Terraform Init & Apply
+      - name: Terraform Init
         working-directory: ./terraform
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: terraform init
+
+      - name: Terraform Apply
+        id: set-ip
+        working-directory: ./terraform
         run: |
-          terraform init
           terraform apply -auto-approve
           echo "EC2_IP=$(terraform output -raw server_public_ip)" >> $GITHUB_OUTPUT
-        id: set-ip
 
   # ─── JOB 3 : ANSIBLE CONFIGURATION ────────────────────
   configure-server:
@@ -65,7 +74,7 @@ jobs:
           ANSIBLE_HOST_KEY_CHECKING: "False"
         run: |
           sed -i "s/YOUR_EC2_IP/${{ needs.infrastructure.outputs.ec2_ip }}/g" ansible/inventory.ini
-          ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
+          ansible-playbook -i ansible/inventory.ini ansible/playbook.yml --extra-vars "ans_user=ubuntu"
 
   # ─── JOB 4 : DOCKER DEPLOYMENT ────────────────────────
   deploy-apps:
@@ -83,7 +92,6 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd /opt/digitrans-cm-supply-chain
-            # Téléchargement du nouveau docker-compose mis à jour sur le repo
             curl -o docker-compose.yml https://raw.githubusercontent.com/${{ github.repository }}/main/docker-compose.yml
             docker compose pull
             docker compose up -d --remove-orphans

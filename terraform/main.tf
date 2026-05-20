@@ -1,3 +1,12 @@
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0" # On fixe la version majeure 5 pour éviter les surprises de la v6
+    }
+  }
+}
+
 provider "aws" {
   region = "us-east-1"
 }
@@ -47,11 +56,11 @@ resource "aws_security_group" "digitrans_sg" {
   }
 }
 
-# 2. Instance EC2 (Ubuntu 22.04 LTS conseillé pour Docker/Ansible)
+# 2. Instance EC2
 resource "aws_instance" "digitrans_ec2" {
-  ami           = "ami-053b0d53c279acc90" # AMI Ubuntu 22.04 LTS dans us-east-1
-  instance_type = "t3.medium"             # Idéal pour faire tourner 5 conteneurs (Java + Node + PG + MQ)
-  key_name      = "digitrans-key"         # Nom de ta paire de clés existante sur ton AWS
+  ami           = "ami-053b0d53c279acc90" # Ubuntu 22.04 LTS dans us-east-1
+  instance_type = "t3.medium"
+  key_name      = "digitrans-key" # Assure-toi que cette clé existe sur ton AWS us-east-1
 
   vpc_security_group_ids = [aws_security_group.digitrans_sg.id]
 
@@ -60,7 +69,7 @@ resource "aws_instance" "digitrans_ec2" {
   }
 }
 
-# 3. Output pour récupérer automatiquement l'IP du serveur
+# 3. Output
 output "server_public_ip" {
   value       = aws_instance.digitrans_ec2.public_ip
   description = "L'adresse IP publique du serveur de production"
