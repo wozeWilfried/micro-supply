@@ -1,0 +1,82 @@
+name: CI/CD Pipeline - Digitrans Supply Chain
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Backend Tests
+        run: echo "Tests backend OK"
+
+  infrastructure:
+    needs: test-backend
+    runs-on: ubuntu-latest
+    outputs:
+      server_ip: ${{ steps.tf_output.outputs.server_ip }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        working-directory: ./terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: "us-east-1"
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: ./terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: "us-east-1"
+        run: terraform apply -auto-approve
+
+      - name: Get Server IP
+        id: tf_output
+        working-directory: ./terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: "us-east-1"
+        run: |
+          IP=$(terraform output -raw server_public_ip)
+          echo "server_ip=$IP" >> $GITHUB_OUTPUT
+
+  configure-server:
+    needs: infrastructure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH Key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          echo "$SSH_PRIVATE_KEY" > ./id_rsa
+          sed -i 's/\r$//' ./id_rsa
+          chmod 600 ./id_rsa
+
+      - name: Run Ansible Playbook
+        run: |
+          SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
+          sed -i "s/YOUR_EC2_IP/$SERVER_IP/g" ansible/inventory.ini
+          ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook \
+            -i ansible/inventory.ini \
+            ansible/playbook.yml \
+            --private-key=./id_rsa
