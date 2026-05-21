@@ -83,6 +83,19 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ needs.infrastructure.outputs.server_ip }} >> ~/.ssh/known_hosts
 
+      - name: Attendre que SSH soit disponible
+        run: |
+          SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
+          echo "Attente SSH sur $SERVER_IP..."
+          for i in $(seq 1 30); do
+            if nc -zw5 $SERVER_IP 22; then
+              echo "SSH disponible!"
+              break
+            fi
+            echo "Tentative $i/30 - attente 10s..."
+            sleep 10
+          done
+
       - name: Run Ansible Playbook
         run: |
           SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
