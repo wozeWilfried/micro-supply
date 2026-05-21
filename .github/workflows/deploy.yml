@@ -42,6 +42,9 @@ jobs:
       - name: Scan Remote Host
         run: |
           SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
+          # Creation explicite du dossier pour eviter le crash de ssh-keyscan
+          mkdir -p ~/.ssh
+          touch ~/.ssh/known_hosts
           ssh-keyscan -H "$SERVER_IP" >> ~/.ssh/known_hosts
 
       - name: Run Ansible Playbook
@@ -49,7 +52,6 @@ jobs:
           SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
           sed -i "s/YOUR_EC2_IP/$SERVER_IP/g" ansible/inventory.ini
           
-          # L'agent SSH du runner fournit automatiquement la clé, plus besoin de paramètre --private-key encombrant
           ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook \
             -i ansible/inventory.ini \
             ansible/playbook.yml
@@ -72,13 +74,14 @@ jobs:
       - name: Scan Remote Host
         run: |
           SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
+          mkdir -p ~/.ssh
+          touch ~/.ssh/known_hosts
           ssh-keyscan -H "$SERVER_IP" >> ~/.ssh/known_hosts
 
       - name: Deploy Apps with Docker Compose
         env:
           SERVER_IP: ${{ needs.infrastructure.outputs.server_ip }}
         run: |
-          # Utilisation directe de SSH qui s'appuie sur l'agent natif configuré par l'action
           scp docker-compose.yml ubuntu@$SERVER_IP:/home/ubuntu/docker-compose.yml
           ssh ubuntu@$SERVER_IP "
             cd /home/ubuntu &&
