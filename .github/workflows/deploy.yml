@@ -19,7 +19,7 @@ jobs:
     needs: test-backend
     runs-on: ubuntu-latest
     outputs:
-      server_ip: "98.82.31.33" # Conserve ton IP active ou laisse la détection dynamique
+      server_ip: "98.82.31.33"
     steps:
       - name: Skip Terraform Creation
         run: echo "Utilisation de l'instance AWS existante pour preserver les quotas."
@@ -31,28 +31,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup SSH Key
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+      # Utilisation de l'action officielle pour injecter proprement la clé SSH
+      - name: Install SSH Key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.EC2_SSH_KEY }}
+          name: id_rsa
+          known_hosts: "placeholder" # Sera mis à jour dynamiquement juste après
+          if_key_exists: replace
+
+      - name: Scan Remote Host
         run: |
-          mkdir -p ~/.ssh
-          # Écriture propre et suppression stricte des sauts de ligne Windows corrompus
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          
-          # On copie aussi la clé à la racine du workspace au cas où Ansible la cherche de manière absolue
-          cp ~/.ssh/id_rsa ./id_rsa
-          chmod 600 ./id_rsa
-          
           SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
           ssh-keyscan -H "$SERVER_IP" >> ~/.ssh/known_hosts
+          # On duplique la clé dans le workspace local pour l'inventaire Ansible si nécessaire
+          cp ~/.ssh/id_rsa ./id_rsa
+          chmod 600 ./id_rsa
 
       - name: Run Ansible Playbook
         run: |
           SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
           sed -i "s/YOUR_EC2_IP/$SERVER_IP/g" ansible/inventory.ini
           
-          # Exécution en forçant l'utilisation de la clé nettoyée du workspace local
           ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook \
             -i ansible/inventory.ini \
             ansible/playbook.yml \
@@ -65,17 +65,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup SSH Key
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+      - name: Install SSH Key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.EC2_SSH_KEY }}
+          name: id_rsa
+          known_hosts: "placeholder"
+          if_key_exists: replace
+
+      - name: Scan Remote Host
         run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          cp ~/.ssh/id_rsa ./id_rsa
-          
           SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
           ssh-keyscan -H "$SERVER_IP" >> ~/.ssh/known_hosts
+          cp ~/.ssh/id_rsa ./id_rsa
+          chmod 600 ./id_rsa
 
       - name: Deploy Apps with Docker Compose
         env:
