@@ -15,7 +15,7 @@ jobs:
       - name: Run Backend Tests
         run: echo "Tests backend OK"
 
-  # On utilise directement la machine déjà allumée sur ton AWS pour ne pas saturer ton quota vCPU
+  # On utilise directement ta machine t3.medium active pour ne pas saturer tes quotas AWS
   infrastructure:
     needs: test-backend
     runs-on: ubuntu-latest
@@ -23,7 +23,7 @@ jobs:
       server_ip: "98.82.31.33"
     steps:
       - name: Skip Terraform Creation
-        run: echo "Utilisation de l'instance AWS existante (98.82.31.33) pour eviter le blocage de quota vCPU."
+        run: echo "Utilisation de l'instance active (98.82.31.33) pour eviter le blocage de quota vCPU."
 
   configure-server:
     needs: infrastructure
