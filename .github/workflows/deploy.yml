@@ -12,7 +12,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Ajoute ici tes étapes de test existantes (Spring Boot, etc.)
       - name: Run Backend Tests
         run: echo "Tests backend OK"
 
@@ -48,15 +47,19 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup SSH Key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
-          # Création du fichier de clé en supprimant les retours à la ligne CRLF de Windows
-          echo "${{ secrets.EC2_SSH_KEY }}" | tr -d '\r' > ./id_rsa
+          # Écrit proprement la clé sans casser le formatage Linux
+          echo "$SSH_PRIVATE_KEY" > ./id_rsa
+          # Supprime définitivement les retours à la ligne Windows invisibles (\r)
+          sed -i 's/\r$//' ./id_rsa
           chmod 600 ./id_rsa
 
       - name: Run Ansible Playbook
         run: |
-          # Remplacement dynamique de l'IP du serveur cible dans l'inventaire
-          sed -i "s/YOUR_EC2_IP/98.82.31.33/g" ansible/inventory.ini
+          # Remplacement dynamique de l'IP cible
+          sed -i "s/YOUR_EC2_IP/34.201.1.66/g" ansible/inventory.ini
           
-          # Exécution d'Ansible avec désactivation stricte du Host Key Checking pour éviter le blocage SSH
+          # Exécution d'Ansible avec désactivation du Host Key Checking
           ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -i ansible/inventory.ini ansible/playbook.yml --private-key=./id_rsa
