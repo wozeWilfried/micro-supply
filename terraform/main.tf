@@ -19,7 +19,7 @@ data "aws_security_group" "existing_sg" {
 # 2. Déploiement de l'Instance EC2 de Production
 resource "aws_instance" "digitrans_ec2" {
   ami           = "ami-053b0d53c279acc90" # Ubuntu Server 22.04 LTS
-  instance_type = "t3.medium"
+  instance_type = "t3.micro"
   
   # Utilisation de la clé validée présente sur ton compte AWS
   key_name      = "agricam-keypair-dev" 
