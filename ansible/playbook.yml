@@ -40,3 +40,23 @@
         state: directory
         mode: '0755'
         owner: "{{ ans_user | default('ubuntu') }}"
+
+    - name: Installer Docker
+      apt:
+        name: docker.io
+        state: present
+        update_cache: yes
+
+    - name: Lancer Docker
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Copier le fichier Dockerfile (ou docker-compose)
+      copy:
+        src: ../docker-compose.yml
+        dest: /home/ubuntu/docker-compose.yml
+
+    - name: Déployer avec Docker Compose
+      command: docker compose -f /home/ubuntu/docker-compose.yml up -d
