@@ -15,15 +15,15 @@ jobs:
       - name: Run Backend Tests
         run: echo "Tests backend OK"
 
-  # Le job infrastructure est configuré pour ne plus bloquer sur les quotas AWS
+  # On utilise directement la machine déjà allumée sur ton AWS pour ne pas saturer ton quota vCPU
   infrastructure:
     needs: test-backend
     runs-on: ubuntu-latest
     outputs:
-      server_ip: "98.82.31.33" # On injecte directement l'IP d'une de tes machines actives !
+      server_ip: "98.82.31.33"
     steps:
       - name: Skip Terraform Creation
-        run: echo "Utilisation de l'instance de production existante pour preserver les quotas vCPU."
+        run: echo "Utilisation de l'instance AWS existante (98.82.31.33) pour eviter le blocage de quota vCPU."
 
   configure-server:
     needs: infrastructure
