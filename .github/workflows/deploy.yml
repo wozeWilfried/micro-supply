@@ -68,9 +68,15 @@ jobs:
         env:
           SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
-          echo "$SSH_PRIVATE_KEY" > ./id_rsa
-          sed -i 's/\r$//' ./id_rsa
-          chmod 600 ./id_rsa
+          mkdir -p ~/.ssh
+          # Écriture directe du texte brut sans base64
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          sed -i 's/\r$//' ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          
+          # Scan dynamique de la bonne IP récupérée de Terraform
+          SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
+          ssh-keyscan -H "$SERVER_IP" >> ~/.ssh/known_hosts
 
       - name: Run Ansible Playbook
         run: |
@@ -79,7 +85,7 @@ jobs:
           ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook \
             -i ansible/inventory.ini \
             ansible/playbook.yml \
-            --private-key=./id_rsa
+            --private-key=~/.ssh/id_rsa
 
   deploy-docker:
     needs: [infrastructure, configure-server]
@@ -92,19 +98,23 @@ jobs:
         env:
           SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
-          echo "$SSH_PRIVATE_KEY" > ./id_rsa
-          sed -i 's/\r$//' ./id_rsa
-          chmod 600 ./id_rsa
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          sed -i 's/\r$//' ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          
+          SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
+          ssh-keyscan -H "$SERVER_IP" >> ~/.ssh/known_hosts
 
       - name: Deploy Apps with Docker Compose
         env:
           SERVER_IP: ${{ needs.infrastructure.outputs.server_ip }}
         run: |
-          # Copier le fichier docker-compose.yml vers le serveur EC2
-          scp -o StrictHostKeyChecking=no -i ./id_rsa docker-compose.yml ubuntu@$SERVER_IP:/home/ubuntu/docker-compose.yml
+          # Envoi du fichier docker-compose.yml sur le serveur distant
+          scp -i ~/.ssh/id_rsa docker-compose.yml ubuntu@$SERVER_IP:/home/ubuntu/docker-compose.yml
           
-          # Exécuter la commande de déploiement à distance via SSH
-          ssh -o StrictHostKeyChecking=no -i ./id_rsa ubuntu@$SERVER_IP "
+          # Connexion et déploiement de tes images Docker
+          ssh -i ~/.ssh/id_rsa ubuntu@$SERVER_IP "
             cd /home/ubuntu &&
             docker compose pull &&
             docker compose up -d --remove-orphans
