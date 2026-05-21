@@ -19,43 +19,10 @@ jobs:
     needs: test-backend
     runs-on: ubuntu-latest
     outputs:
-      server_ip: ${{ steps.tf_output.outputs.server_ip }}
+      server_ip: "98.82.31.33" # Conserve ton IP active ou laisse la détection dynamique
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.7.0
-          terraform_wrapper: false
-
-      - name: Terraform Init
-        working-directory: ./terraform
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: "us-east-1"
-        run: terraform init
-
-      - name: Terraform Apply
-        working-directory: ./terraform
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: "us-east-1"
-        run: terraform apply -auto-approve
-
-      - name: Get Server IP
-        id: tf_output
-        working-directory: ./terraform
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: "us-east-1"
-        run: |
-          IP=$(terraform output -raw server_public_ip)
-          echo "server_ip=$IP" >> $GITHUB_OUTPUT
+      - name: Skip Terraform Creation
+        run: echo "Utilisation de l'instance AWS existante pour preserver les quotas."
 
   configure-server:
     needs: infrastructure
@@ -68,15 +35,55 @@ jobs:
         env:
           SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
-          echo "$SSH_PRIVATE_KEY" > ./id_rsa
-          sed -i 's/\r$//' ./id_rsa
+          mkdir -p ~/.ssh
+          # Écriture propre et suppression stricte des sauts de ligne Windows corrompus
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          
+          # On copie aussi la clé à la racine du workspace au cas où Ansible la cherche de manière absolue
+          cp ~/.ssh/id_rsa ./id_rsa
           chmod 600 ./id_rsa
+          
+          SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
+          ssh-keyscan -H "$SERVER_IP" >> ~/.ssh/known_hosts
 
       - name: Run Ansible Playbook
         run: |
           SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
           sed -i "s/YOUR_EC2_IP/$SERVER_IP/g" ansible/inventory.ini
+          
+          # Exécution en forçant l'utilisation de la clé nettoyée du workspace local
           ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook \
             -i ansible/inventory.ini \
             ansible/playbook.yml \
             --private-key=./id_rsa
+
+  deploy-docker:
+    needs: [infrastructure, configure-server]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH Key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          cp ~/.ssh/id_rsa ./id_rsa
+          
+          SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
+          ssh-keyscan -H "$SERVER_IP" >> ~/.ssh/known_hosts
+
+      - name: Deploy Apps with Docker Compose
+        env:
+          SERVER_IP: ${{ needs.infrastructure.outputs.server_ip }}
+        run: |
+          scp -i ./id_rsa docker-compose.yml ubuntu@$SERVER_IP:/home/ubuntu/docker-compose.yml
+          ssh -i ./id_rsa ubuntu@$SERVER_IP "
+            cd /home/ubuntu &&
+            docker compose pull &&
+            docker compose up -d --remove-orphans
+          "
