@@ -11,7 +11,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Run Backend Tests
         run: echo "Tests backend OK"
 
@@ -68,9 +67,10 @@ jobs:
         env:
           SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
-          echo "$SSH_PRIVATE_KEY" > ./id_rsa
-          sed -i 's/\r$//' ./id_rsa
-          chmod 600 ./id_rsa
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" | base64 -d > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ needs.infrastructure.outputs.server_ip }} >> ~/.ssh/known_hosts
 
       - name: Run Ansible Playbook
         run: |
@@ -79,4 +79,4 @@ jobs:
           ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook \
             -i ansible/inventory.ini \
             ansible/playbook.yml \
-            --private-key=./id_rsa
+            --private-key=~/.ssh/id_rsa
