@@ -29,14 +29,16 @@ jobs:
           terraform_version: 1.7.0
           terraform_wrapper: false
 
-      - name: Manage SSH Keypair on AWS
+      - name: Create SSH Keypair on AWS
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
         run: |
-          aws ec2 delete-key-pair --key-name "digitrans-deploy-key-v2" || true
-          aws ec2 import-key-pair --key-name "digitrans-deploy-key-v2" --public-key-material "${{ secrets.SSH_PUBLIC_KEY }}"
+          aws ec2 delete-key-pair --key-name digitrans-deploy-key-v2 --region us-east-1 || true
+          sleep 3
+          echo "c3NoLXJzYSBBQUFBQjNOemFDMXljMkVBQUFBREFRQUJBQUFDQVFEb1NSK0hoaTltUkxaVVk5eU9KR29DTG5heFo3OVVSUGhIMTVTN1FmRUMwbEZLV09mVytSWDdCdnpPRklWaGxMaHZrNXBUYm5Lb1BOUUgwMnJ3cmRDOExuUDg1czFIUjFVOFFaMFVXbVNnZWF0bUcwWU9WTXdwN29Cc2hjU3kydisyaWlsZC9STGtFNzJBbGM1VnFmSjAyYk9yMDluem5UQnQ0Q2ZmL1g4aWFoZzA1K1MyaE5aQWt3NmFsWEtXMTFsaHAwRnVQSjYzL2NEeDlUa0g4Y01GTkE3RU1nMDFqeHQwOU9oU0FCc2JmMVhSNlVvRlNMbDZQLzU1RGtLa2JBamJqSUo2ZXBndWNabllwdDVNelE4SHRqTEM0RTJrdzR5VDBSM3V6WjRRQUFqZCtsTFR5RnVITjh5RndBcDBHWmZ6NVJYWU5GQ2IxS1N3elYzQWZKUkZyZlpkeVVVM0xuV3BSdVRsbGpSRi9oOVNNWTJTSVVxemI1cDBzeXFjc1FHeGF3TXNiUERGVkhjRU90cDZHcjNsbWFOdDY5R0RxVnJFcm1HaHM2VUx3dkpwRGV5QWJZaSthWjBmT0s3MDB4b2tCSGZkTFpOYys2RERobUlWU0EyRFlDc2lSTFgxeGhZMTl4M24vd3I1b3hJNDhkTE0xd2tzSzBGS3UvaHo1R2dhUWI3WXpuNmFZbmVmVTBQdWZheGxSM0FONkpPcXA1Z3ViSzM3SkNUQm40aFE5eVEwT2lqNGJWZFR1NjZrWG02bWgvbmVIZThJL3NTOHh5ckNaTEtocjduRDh0VGYwYlR3dXJkelVkZWxKQW1IVnJtbkl0R0NnTUJsSWtobGdCM09xRXdVSzNGUVRKbmkwL2s5NDU1c0pUVlYvT1ZoaDlTdnkvQktCdGhjY1E9PSBVU0VSQFdJTEZSSUVECg==" | base64 -d > /tmp/pubkey.txt
+          aws ec2 import-key-pair             --key-name digitrans-deploy-key-v2             --region us-east-1             --public-key-material fileb:///tmp/pubkey.txt
 
       - name: Terraform Init
         working-directory: ./terraform
