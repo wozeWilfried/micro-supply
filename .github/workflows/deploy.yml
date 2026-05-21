@@ -19,10 +19,10 @@ jobs:
     needs: test-backend
     runs-on: ubuntu-latest
     outputs:
-      server_ip: "98.82.31.33"
+      server_ip: "3.237.236.41" # Mise à jour avec la nouvelle IP de ton instance AWS active
     steps:
       - name: Skip Terraform Creation
-        run: echo "Utilisation de l'instance AWS existante pour preserver les quotas."
+        run: echo "Utilisation de l'instance AWS existante (3.237.236.41) pour preserver les quotas."
 
   configure-server:
     needs: infrastructure
@@ -44,7 +44,6 @@ jobs:
           SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
           sed -i "s/YOUR_EC2_IP/$SERVER_IP/g" ansible/inventory.ini
           
-          # On désactive strictement la vérification des clés d'hôte (Host Key Checking)
           export ANSIBLE_HOST_KEY_CHECKING=False
           ansible-playbook \
             -i ansible/inventory.ini \
@@ -70,7 +69,6 @@ jobs:
         env:
           SERVER_IP: ${{ needs.infrastructure.outputs.server_ip }}
         run: |
-          # SSH et SCP ignorent complètement le fichier known_hosts grâce aux arguments passés en ligne
           scp -o StrictHostKeyChecking=no docker-compose.yml ubuntu@$SERVER_IP:/home/ubuntu/docker-compose.yml
           ssh -o StrictHostKeyChecking=no ubuntu@$SERVER_IP "
             cd /home/ubuntu &&
