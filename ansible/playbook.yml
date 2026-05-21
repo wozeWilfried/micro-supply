@@ -2,6 +2,9 @@
 - name: Configuration du serveur de production AGROCAM S.A.
   hosts: all
   become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+
   tasks:
 
     - name: Mettre a jour le cache apt
@@ -18,7 +21,7 @@
           - gnupg
           - lsb-release
           - docker.io
-          - docker-compose-plugin
+          - python3-pip
         state: present
 
     - name: Demarrer et activer Docker
@@ -32,6 +35,12 @@
         name: ubuntu
         groups: docker
         append: yes
+
+    - name: Installer Docker Compose v2
+      get_url:
+        url: https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-linux-x86_64
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
 
     - name: Creer le dossier de deploiement
       file:
@@ -48,5 +57,5 @@
         mode: '0644'
 
     - name: Lancer l application avec Docker Compose
-      command: docker compose -f /home/ubuntu/docker-compose.yml up -d --build
+      command: docker-compose -f /home/ubuntu/docker-compose.yml up -d --build
       become_user: ubuntu
