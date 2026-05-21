@@ -15,15 +15,47 @@ jobs:
       - name: Run Backend Tests
         run: echo "Tests backend OK"
 
-  # On utilise directement ta machine t3.medium active pour ne pas saturer tes quotas AWS
   infrastructure:
     needs: test-backend
     runs-on: ubuntu-latest
     outputs:
-      server_ip: "98.82.31.33"
+      server_ip: ${{ steps.tf_output.outputs.server_ip }}
     steps:
-      - name: Skip Terraform Creation
-        run: echo "Utilisation de l'instance active (98.82.31.33) pour eviter le blocage de quota vCPU."
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        working-directory: ./terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: "us-east-1"
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: ./terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: "us-east-1"
+        run: terraform apply -auto-approve
+
+      - name: Get Server IP
+        id: tf_output
+        working-directory: ./terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: "us-east-1"
+        run: |
+          IP=$(terraform output -raw server_public_ip)
+          echo "server_ip=$IP" >> $GITHUB_OUTPUT
 
   configure-server:
     needs: infrastructure
@@ -36,13 +68,9 @@ jobs:
         env:
           SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-          sed -i 's/\r$//' ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          
-          SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
-          ssh-keyscan -H "$SERVER_IP" >> ~/.ssh/known_hosts
+          echo "$SSH_PRIVATE_KEY" > ./id_rsa
+          sed -i 's/\r$//' ./id_rsa
+          chmod 600 ./id_rsa
 
       - name: Run Ansible Playbook
         run: |
@@ -51,34 +79,4 @@ jobs:
           ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook \
             -i ansible/inventory.ini \
             ansible/playbook.yml \
-            --private-key=~/.ssh/id_rsa
-
-  deploy-docker:
-    needs: [infrastructure, configure-server]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup SSH Key
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-          sed -i 's/\r$//' ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          
-          SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
-          ssh-keyscan -H "$SERVER_IP" >> ~/.ssh/known_hosts
-
-      - name: Deploy Apps with Docker Compose
-        env:
-          SERVER_IP: ${{ needs.infrastructure.outputs.server_ip }}
-        run: |
-          scp -i ~/.ssh/id_rsa docker-compose.yml ubuntu@$SERVER_IP:/home/ubuntu/docker-compose.yml
-          ssh -i ~/.ssh/id_rsa ubuntu@$SERVER_IP "
-            cd /home/ubuntu &&
-            docker compose pull &&
-            docker compose up -d --remove-orphans
-          "
+            --private-key=./id_rsa
