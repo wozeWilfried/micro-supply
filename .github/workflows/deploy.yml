@@ -39,22 +39,17 @@ jobs:
           known_hosts: "placeholder"
           if_key_exists: replace
 
-      - name: Scan Remote Host
-        run: |
-          SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
-          # Creation explicite du dossier pour eviter le crash de ssh-keyscan
-          mkdir -p ~/.ssh
-          touch ~/.ssh/known_hosts
-          ssh-keyscan -H "$SERVER_IP" >> ~/.ssh/known_hosts
-
       - name: Run Ansible Playbook
         run: |
           SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
           sed -i "s/YOUR_EC2_IP/$SERVER_IP/g" ansible/inventory.ini
           
-          ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook \
+          # On désactive strictement la vérification des clés d'hôte (Host Key Checking)
+          export ANSIBLE_HOST_KEY_CHECKING=False
+          ansible-playbook \
             -i ansible/inventory.ini \
-            ansible/playbook.yml
+            ansible/playbook.yml \
+            --ssh-common-args="-o StrictHostKeyChecking=no"
 
   deploy-docker:
     needs: [infrastructure, configure-server]
@@ -71,19 +66,13 @@ jobs:
           known_hosts: "placeholder"
           if_key_exists: replace
 
-      - name: Scan Remote Host
-        run: |
-          SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
-          mkdir -p ~/.ssh
-          touch ~/.ssh/known_hosts
-          ssh-keyscan -H "$SERVER_IP" >> ~/.ssh/known_hosts
-
       - name: Deploy Apps with Docker Compose
         env:
           SERVER_IP: ${{ needs.infrastructure.outputs.server_ip }}
         run: |
-          scp docker-compose.yml ubuntu@$SERVER_IP:/home/ubuntu/docker-compose.yml
-          ssh ubuntu@$SERVER_IP "
+          # SSH et SCP ignorent complètement le fichier known_hosts grâce aux arguments passés en ligne
+          scp -o StrictHostKeyChecking=no docker-compose.yml ubuntu@$SERVER_IP:/home/ubuntu/docker-compose.yml
+          ssh -o StrictHostKeyChecking=no ubuntu@$SERVER_IP "
             cd /home/ubuntu &&
             docker compose pull &&
             docker compose up -d --remove-orphans
