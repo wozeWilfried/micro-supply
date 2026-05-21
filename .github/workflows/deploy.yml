@@ -19,31 +19,31 @@ jobs:
     needs: test-backend
     runs-on: ubuntu-latest
     outputs:
-      server_ip: "32.198.27.122" # Ton IP active actuelle
+      server_ip: "32.198.27.122"
     steps:
       - name: Skip Terraform Creation
         run: echo "Utilisation de l'instance AWS existante."
 
-  configure-server:
+  deploy-and-configure:
     needs: infrastructure
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Nettoyage rigoureux des sauts de ligne pour libcrypto
+      # Configuration unique et sécurisée de la clé SSH pour tout le job
       - name: Configure SSH Key securely
         env:
           SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          # Le 'tr -d' supprime les retours à la ligne Windows invisibles (\r)
           echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           
           SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
           ssh-keyscan -H "$SERVER_IP" >> ~/.ssh/known_hosts
 
+      # Étape 1 : Exécution d'Ansible
       - name: Run Ansible Playbook
         run: |
           SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
@@ -56,30 +56,13 @@ jobs:
             --private-key=~/.ssh/id_rsa \
             --ssh-common-args="-o StrictHostKeyChecking=no"
 
-  deploy-docker:
-    needs: [infrastructure, configure-server]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure SSH Key securely
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          
-          SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
-          ssh-keyscan -H "$SERVER_IP" >> ~/.ssh/known_hosts
-
+      # Étape 2 : Déploiement des conteneurs Docker (plus de perte de clé !)
       - name: Deploy Apps with Docker Compose
         env:
           SERVER_IP: ${{ needs.infrastructure.outputs.server_ip }}
         run: |
-          scp -i ~/.ssh/id_rsa docker-compose.yml ubuntu@$SERVER_IP:/home/ubuntu/docker-compose.yml
-          ssh -i ~/.ssh/id_rsa ubuntu@$SERVER_IP "
+          scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa docker-compose.yml ubuntu@$SERVER_IP:/home/ubuntu/docker-compose.yml
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ubuntu@$SERVER_IP "
             cd /home/ubuntu &&
             docker compose pull &&
             docker compose up -d --remove-orphans
