@@ -31,32 +31,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Utilisation de l'action officielle pour injecter proprement la clé SSH
       - name: Install SSH Key
         uses: shimataro/ssh-key-action@v2
         with:
           key: ${{ secrets.EC2_SSH_KEY }}
           name: id_rsa
-          known_hosts: "placeholder" # Sera mis à jour dynamiquement juste après
+          known_hosts: "placeholder"
           if_key_exists: replace
 
       - name: Scan Remote Host
         run: |
           SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
           ssh-keyscan -H "$SERVER_IP" >> ~/.ssh/known_hosts
-          # On duplique la clé dans le workspace local pour l'inventaire Ansible si nécessaire
-          cp ~/.ssh/id_rsa ./id_rsa
-          chmod 600 ./id_rsa
 
       - name: Run Ansible Playbook
         run: |
           SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
           sed -i "s/YOUR_EC2_IP/$SERVER_IP/g" ansible/inventory.ini
           
+          # L'agent SSH du runner fournit automatiquement la clé, plus besoin de paramètre --private-key encombrant
           ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook \
             -i ansible/inventory.ini \
-            ansible/playbook.yml \
-            --private-key=./id_rsa
+            ansible/playbook.yml
 
   deploy-docker:
     needs: [infrastructure, configure-server]
@@ -77,15 +73,14 @@ jobs:
         run: |
           SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
           ssh-keyscan -H "$SERVER_IP" >> ~/.ssh/known_hosts
-          cp ~/.ssh/id_rsa ./id_rsa
-          chmod 600 ./id_rsa
 
       - name: Deploy Apps with Docker Compose
         env:
           SERVER_IP: ${{ needs.infrastructure.outputs.server_ip }}
         run: |
-          scp -i ./id_rsa docker-compose.yml ubuntu@$SERVER_IP:/home/ubuntu/docker-compose.yml
-          ssh -i ./id_rsa ubuntu@$SERVER_IP "
+          # Utilisation directe de SSH qui s'appuie sur l'agent natif configuré par l'action
+          scp docker-compose.yml ubuntu@$SERVER_IP:/home/ubuntu/docker-compose.yml
+          ssh ubuntu@$SERVER_IP "
             cd /home/ubuntu &&
             docker compose pull &&
             docker compose up -d --remove-orphans
