@@ -29,12 +29,21 @@ jobs:
           terraform_version: 1.7.0
           terraform_wrapper: false
 
+      - name: Manage SSH Keypair on AWS
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          aws ec2 delete-key-pair --key-name "digitrans-deploy-key-v2" || true
+          aws ec2 import-key-pair --key-name "digitrans-deploy-key-v2" --public-key-material "${{ secrets.SSH_PUBLIC_KEY }}"
+
       - name: Terraform Init
         working-directory: ./terraform
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: "us-east-1"
+          AWS_REGION: us-east-1
         run: terraform init
 
       - name: Terraform Apply
@@ -42,7 +51,7 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: "us-east-1"
+          AWS_REGION: us-east-1
         run: terraform apply -auto-approve
 
       - name: Get Server IP
@@ -51,7 +60,7 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: "us-east-1"
+          AWS_REGION: us-east-1
         run: |
           IP=$(terraform output -raw server_public_ip)
           echo "server_ip=$IP" >> $GITHUB_OUTPUT
@@ -76,7 +85,4 @@ jobs:
         run: |
           SERVER_IP=${{ needs.infrastructure.outputs.server_ip }}
           sed -i "s/YOUR_EC2_IP/$SERVER_IP/g" ansible/inventory.ini
-          ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook \
-            -i ansible/inventory.ini \
-            ansible/playbook.yml \
-            --private-key=~/.ssh/id_rsa
+          ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -i ansible/inventory.ini ansible/playbook.yml --private-key=~/.ssh/id_rsa
