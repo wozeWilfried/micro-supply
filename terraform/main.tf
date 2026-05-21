@@ -11,18 +11,20 @@ provider "aws" {
   region = "us-east-1"
 }
 
-# On récupère le groupe de sécurité qui existe déjà sur ton compte AWS
+# 1. Récupération du Groupe de Sécurité existant sur AWS
 data "aws_security_group" "existing_sg" {
   name = "digitrans-supply-chain-sg"
 }
 
-# Déploiement de l'instance EC2
+# 2. Déploiement de l'Instance EC2 de Production
 resource "aws_instance" "digitrans_ec2" {
-  ami           = "ami-053b0d53c279acc90"
+  ami           = "ami-053b0d53c279acc90" # Ubuntu Server 22.04 LTS
   instance_type = "t3.medium"
-  key_name      = "digitrans-key" # Utilise la clé déjà présente sur AWS
+  
+  # Utilisation de la clé validée présente sur ton compte AWS
+  key_name      = "agricam-keypair-dev" 
 
-  # On associe l'ID du groupe de sécurité récupéré ci-dessus
+  # Association du groupe de sécurité récupéré via le bloc data
   vpc_security_group_ids = [data.aws_security_group.existing_sg.id]
 
   tags = {
@@ -30,6 +32,7 @@ resource "aws_instance" "digitrans_ec2" {
   }
 }
 
+# 3. Output pour extraire dynamiquement l'IP pour Ansible
 output "server_public_ip" {
   value       = aws_instance.digitrans_ec2.public_ip
   description = "L'adresse IP publique du serveur de production"
