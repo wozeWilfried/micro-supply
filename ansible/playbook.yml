@@ -4,14 +4,12 @@
   become: yes
   tasks:
 
-    # 1. Mise à jour du système
-    - name: Mettre à jour les paquets apt
+    - name: Mettre a jour le cache apt
       apt:
         update_cache: yes
-        upgrade: dist
+        cache_valid_time: 3600
 
-    # 2. Installation des prérequis de Docker
-    - name: Installer les dépendances système
+    - name: Installer les dependances systeme
       apt:
         name:
           - apt-transport-https
@@ -19,44 +17,36 @@
           - curl
           - gnupg
           - lsb-release
+          - docker.io
+          - docker-compose-plugin
         state: present
 
-    # 3. Installation propre de Docker Engine
-    - name: Installer Docker
-      apt:
-        name: docker.io
-        state: present
-
-    - name: Assurer que Docker est démarré
+    - name: Demarrer et activer Docker
       service:
         name: docker
         state: started
         enabled: yes
 
-    # 4. Configuration des dossiers de l'application
-    - name: Créer le dossier de déploiement applicatif
+    - name: Ajouter ubuntu au groupe docker
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+    - name: Creer le dossier de deploiement
       file:
-        path: /opt/digitrans-cm-supply-chain
+        path: /opt/digitrans-supply-chain
         state: directory
         mode: '0755'
-        owner: "{{ ans_user | default('ubuntu') }}"
+        owner: ubuntu
 
-    - name: Installer Docker
-      apt:
-        name: docker.io
-        state: present
-        update_cache: yes
-
-    - name: Lancer Docker
-      service:
-        name: docker
-        state: started
-        enabled: yes
-
-    - name: Copier le fichier Dockerfile (ou docker-compose)
+    - name: Copier docker-compose.yml
       copy:
         src: ../docker-compose.yml
         dest: /home/ubuntu/docker-compose.yml
+        owner: ubuntu
+        mode: '0644'
 
-    - name: Déployer avec Docker Compose
-      command: docker compose -f /home/ubuntu/docker-compose.yml up -d
+    - name: Lancer l application avec Docker Compose
+      command: docker compose -f /home/ubuntu/docker-compose.yml up -d --build
+      become_user: ubuntu
